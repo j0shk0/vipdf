@@ -1,0 +1,10 @@
+[package]
+name = "vipdf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+winit = "0.30.13"
+hayro = "0.7.1"
+vello_cpu = "0.0.9"
+softbuffer = "0.4.0"
