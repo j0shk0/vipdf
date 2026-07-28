@@ -1,16 +1,13 @@
 {
-  description = "vipdf dev environment";
+  description = "vipdf - a minimal PDF viewer";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    flake-utils = {
-      url = "github:numtide/flake-utils";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+  outputs = { nixpkgs, rust-overlay, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -22,33 +19,61 @@
           extensions = [ "rust-src" "clippy" "rustfmt" ];
         };
 
-      libPath = with pkgs; lib.makeLibraryPath [
-        libGL
-        libxkbcommon
-        wayland
-      ];
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
 
-      in {
+        runtimeLibs = with pkgs; [
+          libGL
+          libxkbcommon
+          wayland
+          libX11
+          libXcursor
+          libXrandr
+          libXi
+          libxcb
+        ];
 
-        devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [
-            rustToolchain
-          ];
+        libPath = pkgs.lib.makeLibraryPath runtimeLibs;
 
-          buildInputs = with pkgs; [
-            openssl
-            pkg-config
-            rust-analyzer
-          ];
+        commonArgs = {
+          pname = "vipdf";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          buildInputs = runtimeLibs ++ [ pkgs.stdenv.cc.cc.lib ];
+          meta = with pkgs.lib; {
+            description = "A minimal PDF viewer written in Rust with vim keybindings";
+            license = licenses.gpl3Only;
+            mainProgram = "vipdf";
+            platforms = platforms.linux;
+          };
+        };
 
+        vipdf = rustPlatform.buildRustPackage (commonArgs // {
+          nativeBuildInputs = with pkgs; [ pkg-config autoPatchelfHook ];
+          runtimeDependencies = runtimeLibs;
+        });
+      in
+      {
+        packages = {
+          default = vipdf;
+        };
+
+        apps.default = {
+          type = "app";
+          program = "${vipdf}/bin/vipdf";
+        };
+
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = [ rustToolchain ];
+          buildInputs = with pkgs; [ cargo-about pkg-config rust-analyzer ] ++ runtimeLibs;
           LD_LIBRARY_PATH = libPath;
-
           shellHook = ''
             mkdir -p ~/.rust-rover/toolchain
-
             ln -sfn ${rustToolchain}/lib ~/.rust-rover/toolchain
             ln -sfn ${rustToolchain}/bin ~/.rust-rover/toolchain
-
             export RUST_SRC_PATH="$HOME/.rust-rover/toolchain/lib/rustlib/src/rust/library"
           '';
         };
