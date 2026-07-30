@@ -77,8 +77,8 @@ pub fn render_pdf(file: Vec<u8>, scale: f32) -> Vec<hayro::vello_cpu::Pixmap> {
     let cache = RenderCache::new();
 
     let mut output: Vec<hayro::vello_cpu::Pixmap> = Vec::new();
-    for (_, page) in pdf.pages().iter().enumerate() {
-        &output.push(render(page, &cache, &interpreter_settings, &render_settings));
+    for page in pdf.pages().iter() {
+        let _ = &output.push(render(page, &cache, &interpreter_settings, &render_settings));
     }
     output
 }
