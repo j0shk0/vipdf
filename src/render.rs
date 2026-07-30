@@ -5,6 +5,7 @@ use hayro::hayro_syntax::Pdf;
 use hayro::{RenderCache, RenderSettings, render};
 use std::path::Path;
 use std::sync::Arc;
+use hayro::vello_cpu::Pixmap;
 use vello_cpu::color::palette::css::WHITE;
 
 fn load_asset(name: &str) -> Option<(FontData, u32)> {
@@ -14,8 +15,11 @@ fn load_asset(name: &str) -> Option<(FontData, u32)> {
     Some((Arc::new(data), 0))
 }
 
-pub fn render_pdf(file: Vec<u8>, scale: f32) -> Vec<hayro::vello_cpu::Pixmap> {
-
+pub fn render_pdf(
+    file: Vec<u8>,
+    pages: Option<(Vec<Pixmap>, usize)>,
+    scale: f32,
+) -> Vec<Pixmap> {
     let pdf = Pdf::new(file).unwrap();
 
     let interpreter_settings = InterpreterSettings {
@@ -75,10 +79,31 @@ pub fn render_pdf(file: Vec<u8>, scale: f32) -> Vec<hayro::vello_cpu::Pixmap> {
     };
 
     let cache = RenderCache::new();
+    let mut output: Vec<Pixmap> = Vec::new();
 
-    let mut output: Vec<hayro::vello_cpu::Pixmap> = Vec::new();
-    for page in pdf.pages().iter() {
-        let _ = &output.push(render(page, &cache, &interpreter_settings, &render_settings));
+    match pages {
+        None => {
+            let first_page = render(
+                &pdf.pages()[0],
+                &cache,
+                &interpreter_settings,
+                &render_settings,
+            );
+            for _  in pdf.pages().iter() {
+                let _ = &output.push(Pixmap::new(0,0));
+            }
+            output[0] = first_page;
+        }
+        Some((pages, page)) => {
+            let rendered_page = render(
+                &pdf.pages()[page],
+                &cache,
+                &interpreter_settings,
+                &render_settings,
+            );
+            output = pages;
+            output[page] = rendered_page;
+        }
     }
     output
 }

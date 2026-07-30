@@ -32,7 +32,7 @@ impl App {
         self.file = file;
         self.latest_scale = 1.0;
         self.scale = self.latest_scale;
-        self.pages = render_pdf(self.file.clone(), self.scale);
+        self.pages = render_pdf(self.file.clone(), None, self.scale);
         self.scroll_y = 0; // Initialize scroll_y
         self.parser.init();
     }
@@ -62,6 +62,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let tmp_page_num = self.current_page;
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
@@ -149,8 +150,7 @@ impl ApplicationHandler for App {
                         }
                         Some(Command::JumpToEnd) => {
                             self.current_page = self.pages.len() - 1;
-                            let page_h =
-                                self.pages[self.current_page].height() as u32;
+                            let page_h = self.pages[self.current_page].height() as u32;
                             self.scroll_y = page_h.saturating_sub(win_h);
                             changed = true;
                         }
@@ -158,6 +158,14 @@ impl ApplicationHandler for App {
 
                     if changed {
                         if let Some(window) = self.window.as_ref() {
+                            if self.current_page != tmp_page_num {
+                                let pages = std::mem::take(&mut self.pages);
+                                self.pages = render_pdf(
+                                    self.file.clone(),
+                                    Option::from((pages, self.current_page)),
+                                    self.scale,
+                                );
+                            }
                             window.request_redraw();
                         }
                     }
@@ -175,7 +183,12 @@ impl App {
         };
 
         if (self.scale != self.latest_scale) {
-            self.pages = render_pdf(self.file.clone(), self.latest_scale);
+            let pages = std::mem::take(&mut self.pages);
+            self.pages = render_pdf(
+                self.file.clone(),
+                Option::from((pages, self.current_page)),
+                self.latest_scale,
+            );
             self.scale = self.latest_scale
         }
 
