@@ -1,6 +1,8 @@
+mod parser;
 mod render;
 
 use crate::render::render_pdf;
+use parser::{Command, KeyParser};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 use winit::application::ApplicationHandler;
@@ -22,6 +24,7 @@ struct App {
     latest_scale: f32,
     scale: f32,
     scroll_y: u32, // Add scroll_y field
+    parser: KeyParser,
 }
 
 impl App {
@@ -31,6 +34,7 @@ impl App {
         self.scale = self.latest_scale;
         self.pages = render_pdf(self.file.clone(), self.scale);
         self.scroll_y = 0; // Initialize scroll_y
+        self.parser.init();
     }
 }
 
@@ -66,6 +70,11 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 self.draw();
             }
+            WindowEvent::Resized(_) => {
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput {
                 event: key_event, ..
             } => {
@@ -92,38 +101,57 @@ impl ApplicationHandler for App {
                     // How far we can scroll before the bottom of the page reaches
                     // the bottom of the window. 0 if the page fits.
                     let max_scroll = page_h.saturating_sub(win_h);
+                    let command: Option<Command> = self.parser.read(letter.to_string());
 
-                    if letter == "j" {
-                        if self.scroll_y < max_scroll {
-                            // Still room to scroll down within this page.
-                            self.scroll_y = (self.scroll_y + SCROLL_STEP).min(max_scroll);
+                    match command {
+                        None => {}
+                        Some(Command::ScrollUp) => {
+                            if self.scroll_y < max_scroll {
+                                // Still room to scroll down within this page.
+                                self.scroll_y = (self.scroll_y + SCROLL_STEP).min(max_scroll);
+                                changed = true;
+                            } else if self.current_page + 1 < self.pages.len() {
+                                // Bottom reached -> next page.
+                                self.current_page += 1;
+                                self.scroll_y = 0;
+                                changed = true;
+                            }
+                        }
+                        Some(Command::ScrollDown) => {
+                            if self.scroll_y > 0 {
+                                // Still room to scroll up within this page.
+                                self.scroll_y = self.scroll_y.saturating_sub(SCROLL_STEP);
+                                changed = true;
+                            } else if self.current_page > 0 {
+                                // Top reached -> previous page, land at its bottom.
+                                self.current_page -= 1;
+                                let prev_h = self.pages[self.current_page].height() as u32;
+                                self.scroll_y = prev_h.saturating_sub(win_h);
+                                changed = true;
+                            }
+                        }
+                        Some(Command::ZoomIn) => {
+                            self.latest_scale += ZOOM_FACTOR;
+                            self.scroll_y = 0; // scale change invalidates scroll position
                             changed = true;
-                        } else if self.current_page + 1 < self.pages.len() {
-                            // Bottom reached -> next page.
-                            self.current_page += 1;
+                        }
+                        Some(Command::ZoomOut) => {
+                            if self.latest_scale - ZOOM_FACTOR >= 1.0 {
+                                self.latest_scale -= ZOOM_FACTOR;
+                                self.scroll_y = 0;
+                                changed = true;
+                            }
+                        }
+                        Some(Command::JumpToStart) => {
+                            self.current_page = 0;
                             self.scroll_y = 0;
                             changed = true;
                         }
-                    } else if letter == "k" {
-                        if self.scroll_y > 0 {
-                            // Still room to scroll up within this page.
-                            self.scroll_y = self.scroll_y.saturating_sub(SCROLL_STEP);
-                            changed = true;
-                        } else if self.current_page > 0 {
-                            // Top reached -> previous page, land at its bottom.
-                            self.current_page -= 1;
-                            let prev_h = self.pages[self.current_page].height() as u32;
-                            self.scroll_y = prev_h.saturating_sub(win_h);
-                            changed = true;
-                        }
-                    } else if letter == "+" {
-                        self.latest_scale += ZOOM_FACTOR;
-                        self.scroll_y = 0; // scale change invalidates scroll position
-                        changed = true;
-                    } else if letter == "-" {
-                        if self.latest_scale - ZOOM_FACTOR >= 1.0 {
-                            self.latest_scale -= ZOOM_FACTOR;
-                            self.scroll_y = 0;
+                        Some(Command::JumpToEnd) => {
+                            self.current_page = self.pages.len() - 1;
+                            let page_h =
+                                self.pages[self.current_page].height() as u32;
+                            self.scroll_y = page_h.saturating_sub(win_h);
                             changed = true;
                         }
                     }

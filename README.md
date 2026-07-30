@@ -1,6 +1,6 @@
 # vipdf
 
-A minimal, PDF viewer written in Rust with vim keybindings (currenctly implementing only `j`, `k` and `space`).
+A minimal, PDF viewer written in Rust with vim keybindings (currenctly implementing only `j`, `k`, `gg`, `Shift+g`).
 PDF pages are rendered on the CPU and displayed in a native window.
 
 > **This project is under development.**
@@ -36,6 +36,8 @@ cargo build --release
 
 | Key          | Action                                                                 |
 |--------------|------------------------------------------------------------------------|
+| `gg`         | **Top of the first page**                                              |
+| `Shift+g`    | **Bottom of the last page**                                            |
 | `j`          | **Next page** or **scroll down** if page is taller than window         |
 | `k`          | **Previous page** or **scroll **up** if page is taller than the window |
 | `+`          | Zoom in                                                                |
