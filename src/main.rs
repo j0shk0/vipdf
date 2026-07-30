@@ -2,8 +2,7 @@ mod parser;
 mod renderer;
 mod app;
 
-use winit::application::ApplicationHandler;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ ControlFlow, EventLoop};
 use app::App;
 
 fn main() {
