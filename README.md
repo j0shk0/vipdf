@@ -32,7 +32,7 @@ cargo build --release
 ./target/release/vipdf path/to/file.pdf
 ```
 
-## Controls
+## Usage
 
 | Key          | Action                                                                 |
 |--------------|------------------------------------------------------------------------|
@@ -47,6 +47,8 @@ cargo build --release
 When a page fits entirely within the window, `j` / `k` turn pages. When a page
 is taller than the window (after zooming in), `j` / `k` scroll
 within the page first, and only turn the page once you reach the bottom/top.
+
+>**Hint** If you want to scroll many pages fast just zoom out!
 
 ## Project status & roadmap
 
