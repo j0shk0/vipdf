@@ -1,13 +1,13 @@
+use crate::parser::{Command, KeyParser};
+use crate::renderer::Renderer;
+use softbuffer::Surface;
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use softbuffer::Surface;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::Key;
 use winit::window::{Window, WindowId};
-use crate::parser::{Command, KeyParser};
-use crate::renderer::Renderer;
 
 const ZOOM_FACTOR: f32 = 0.3;
 const SCROLL_STEP: u32 = 40;
@@ -16,10 +16,10 @@ pub struct App {
     window: Option<Rc<Window>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
     pages: Vec<hayro::vello_cpu::Pixmap>,
-    current_page: usize,
+    page: usize,
     latest_scale: f32,
     scale: f32,
-    scroll_y: u32,
+    vertical_scroll_pos: u32,
     parser: KeyParser,
     renderer: Renderer,
 }
@@ -32,19 +32,18 @@ impl App {
         let scale = latest_scale;
         let mut renderer = Renderer::new(file.clone());
         let pages = renderer.render_pdf(None, scale);
-        let scroll_y = 0;
         let mut parser = KeyParser::default();
         parser.init();
         Self {
             window,
             latest_scale,
             scale,
-            scroll_y,
+            vertical_scroll_pos: 0,
             parser,
             renderer,
             surface,
             pages,
-            current_page: 0,
+            page: 0,
         }
     }
 }
@@ -58,7 +57,7 @@ impl ApplicationHandler for App {
         );
 
         // Size the window to the first page (if there is one).
-        if let Some(page) = self.pages.get(self.current_page) {
+        if let Some(page) = self.pages.get(self.page) {
             let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(
                 page.width() as u32,
                 page.height() as u32,
@@ -73,7 +72,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let tmp_page_num = self.current_page;
+        let tmp_page_num = self.page;
         match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
@@ -98,6 +97,7 @@ impl ApplicationHandler for App {
                 let mut changed = false;
 
                 if let Key::Character(letter) = &key_event.logical_key {
+
                     // Figure out whether the current page is taller than the window.
                     let win_h = self
                         .window
@@ -106,7 +106,7 @@ impl ApplicationHandler for App {
                         .unwrap_or(0);
                     let page_h = self
                         .pages
-                        .get(self.current_page)
+                        .get(self.page)
                         .map(|p| p.height() as u32)
                         .unwrap_or(0);
 
@@ -117,64 +117,70 @@ impl ApplicationHandler for App {
 
                     match command {
                         None => {}
-                        Some(Command::ScrollUp) => {
-                            if self.scroll_y < max_scroll {
+                        Some(Command::ScrollDown) => {
+                            if self.vertical_scroll_pos < max_scroll {
                                 // Still room to scroll down within this page.
-                                self.scroll_y = (self.scroll_y + SCROLL_STEP).min(max_scroll);
+                                self.vertical_scroll_pos =
+                                    (self.vertical_scroll_pos + SCROLL_STEP).min(max_scroll);
                                 changed = true;
-                            } else if self.current_page + 1 < self.pages.len() {
+                            } else if self.page + 1 < self.pages.len() {
                                 // Bottom reached -> next page.
-                                self.current_page += 1;
-                                self.scroll_y = 0;
+                                self.page += 1;
+                                self.vertical_scroll_pos = 0;
                                 changed = true;
                             }
                         }
-                        Some(Command::ScrollDown) => {
-                            if self.scroll_y > 0 {
+                        Some(Command::ScrollUp) => {
+                            if self.vertical_scroll_pos > 0 {
                                 // Still room to scroll up within this page.
-                                self.scroll_y = self.scroll_y.saturating_sub(SCROLL_STEP);
+                                self.vertical_scroll_pos =
+                                    self.vertical_scroll_pos.saturating_sub(SCROLL_STEP);
                                 changed = true;
-                            } else if self.current_page > 0 {
+                            } else if self.page > 0 {
                                 // Top reached -> previous page, land at its bottom.
-                                self.current_page -= 1;
-                                let prev_h = self.pages[self.current_page].height() as u32;
-                                self.scroll_y = prev_h.saturating_sub(win_h);
+                                let prev_h = self.pages[self.page].height() as u32;
+                                self.page -= 1;
+                                self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
                                 changed = true;
                             }
                         }
                         Some(Command::ZoomIn) => {
                             self.latest_scale += ZOOM_FACTOR;
-                            self.scroll_y = 0; // scale change invalidates scroll position
+                            self.vertical_scroll_pos = 0; // scale change invalidates scroll position
                             changed = true;
                         }
                         Some(Command::ZoomOut) => {
                             if self.latest_scale - ZOOM_FACTOR >= 1.0 {
                                 self.latest_scale -= ZOOM_FACTOR;
-                                self.scroll_y = 0;
+                                self.vertical_scroll_pos = 0;
                                 changed = true;
                             }
                         }
                         Some(Command::JumpToStart) => {
-                            self.current_page = 0;
-                            self.scroll_y = 0;
+                            self.page = 0;
+                            self.vertical_scroll_pos = 0;
                             changed = true;
                         }
                         Some(Command::JumpToEnd) => {
-                            self.current_page = self.pages.len() - 1;
-                            let page_h = self.pages[self.current_page].height() as u32;
-                            self.scroll_y = page_h.saturating_sub(win_h);
+                            self.page = self.pages.len() - 1;
+                            let page_h = self.pages[self.page].height() as u32;
+                            self.vertical_scroll_pos = page_h.saturating_sub(win_h);
+                            changed = true;
+                        }
+                        Some(Command::JumpToPage(num)) => {
+                            self.page = num.clamp(0, self.pages.len());
+                            self.vertical_scroll_pos = 0;
                             changed = true;
                         }
                     }
 
                     if changed {
                         if let Some(window) = self.window.as_ref() {
-                            if self.current_page != tmp_page_num {
+                            if self.page != tmp_page_num {
                                 let pages = std::mem::take(&mut self.pages);
-                                self.pages = self.renderer.render_pdf(
-                                    Option::from((pages, self.current_page)),
-                                    self.scale,
-                                );
+                                self.pages = self
+                                    .renderer
+                                    .render_pdf(Option::from((pages, self.page)), self.scale);
                             }
                             window.request_redraw();
                         }
@@ -194,74 +200,79 @@ impl App {
 
         if self.scale != self.latest_scale {
             let pages = std::mem::take(&mut self.pages);
-            self.pages = self.renderer.render_pdf(
-                Option::from((pages, self.current_page)),
-                self.latest_scale,
-            );
+            self.pages = self
+                .renderer
+                .render_pdf(Option::from((pages, self.page)), self.latest_scale);
             self.scale = self.latest_scale
         }
 
-        let Some(page) = self.pages.get(self.current_page) else {
+        let Some(page) = self.pages.get(self.page) else {
             return;
         };
 
-        let size = window.inner_size();
-        let (Some(win_width), Some(win_height)) =
-            (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
-        else {
+        let win_size = window.inner_size();
+        let (Some(win_width), Some(win_height)) = (
+            NonZeroU32::new(win_size.width),
+            NonZeroU32::new(win_size.height),
+        ) else {
             return;
         };
 
         surface.resize(win_width, win_height).unwrap();
 
-        let pix_w = page.width() as u32;
-        let pix_h = page.height() as u32;
+        let page_width = page.width() as u32;
+        let page_height = page.height() as u32;
 
-        // Horizontal: center as before.
-        let offset_x = size.width.saturating_sub(pix_w) / 2;
+        let horizontal_padding = win_size.width.saturating_sub(page_width) / 2;
 
-        // Vertical: if the page is taller than the window, top-align and scroll.
-        // If it fits, center it and ignore the scroll.
-        let fits_vertically = pix_h <= size.height;
-        if !fits_vertically {
-            self.scroll_y = self.scroll_y.min(pix_h.saturating_sub(size.height));
-        }
-        let offset_y = if fits_vertically {
-            size.height.saturating_sub(pix_h) / 2
+        // Clamping scroll_y. No scrolling past (page_height - window_height).
+        // If the page fits the window, scroll_position becomes 0.
+        self.vertical_scroll_pos = self
+            .vertical_scroll_pos
+            .min(page_height.saturating_sub(win_size.height));
+
+        // If the page is taller than the window, scroll within the page.
+        // If it fits, no scrolling, only switching to the next or previous page.
+        let fits_vertically = page_height <= win_size.height;
+        let vertical_padding = if fits_vertically {
+            (win_size.height - page_height) / 2
         } else {
             0
         };
-        let src_y0 = if fits_vertically { 0 } else { self.scroll_y };
 
+        // Get buffer for the next frame.
         let mut buffer = surface.buffer_mut().unwrap();
         buffer.fill(0x0000_0000);
 
-        let copy_w = pix_w.min(size.width);
+        let next_frame_page_width = page_width.min(win_size.width);
+
         // How many rows we can actually show: limited by window height and by
         // how many source rows remain below src_y0.
-        let copy_h = pix_h
-            .saturating_sub(src_y0)
-            .min(size.height.saturating_sub(offset_y));
+        let next_frame_page_height = page_height
+            .saturating_sub(self.vertical_scroll_pos)
+            .min(win_size.height.saturating_sub(vertical_padding));
 
-        let pixels = page.data();
+        let page_pixels = page.data();
 
-        for y in 0..copy_h {
-            let src_row = src_y0 + y; // shifted by scroll
-            for x in 0..copy_w {
-                let px = pixels[((src_row * pix_w) + x) as usize];
+        // Draw the page in the buffer.
+        for y in 0..next_frame_page_height {
+            let current_row = self.vertical_scroll_pos + y;
+            for x in 0..next_frame_page_width {
+                let page_pixel = page_pixels[((current_row * page_width) + x) as usize];
 
-                let r = px.r as u32;
-                let g = px.g as u32;
-                let b = px.b as u32;
+                let r = page_pixel.r as u32;
+                let g = page_pixel.g as u32;
+                let b = page_pixel.b as u32;
 
-                let dst_x = offset_x + x;
-                let dst_y = offset_y + y;
-                let dst = (dst_y * size.width + dst_x) as usize;
+                let horizontal_draw_pos = horizontal_padding + x;
+                let vertical_draw_pos = vertical_padding + y;
+                let draw_index =
+                    (vertical_draw_pos * win_size.width + horizontal_draw_pos) as usize;
 
-                buffer[dst] = (r << 16) | (g << 8) | b;
+                // softbuffer wants each pixel as one Integer, so we align the rgb values.
+                buffer[draw_index] = (r << 16) | (g << 8) | b;
             }
         }
-
         buffer.present().unwrap();
     }
 }
