@@ -1,5 +1,12 @@
+#[cfg(not(feature = "pdfium"))]
+use crate::hayro_renderer::HayroRenderer;
 use crate::parser::{Command, KeyParser};
-use crate::renderer::Renderer;
+#[cfg(feature = "pdfium")]
+use crate::pdfium_renderer::PdfiumRenderer;
+#[cfg(not(feature = "pdfium"))]
+use hayro::hayro_syntax::Pdf;
+#[cfg(feature = "pdfium")]
+use pdfium::PdfiumBitmap;
 use softbuffer::Surface;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -15,22 +22,59 @@ const SCROLL_STEP: u32 = 40;
 pub struct App {
     window: Option<Rc<Window>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    #[cfg(feature = "pdfium")]
+    pages: Vec<PdfiumBitmap>,
+    #[cfg(not(feature = "pdfium"))]
     pages: Vec<hayro::vello_cpu::Pixmap>,
     page: usize,
     latest_scale: f32,
     scale: f32,
     vertical_scroll_pos: u32,
     parser: KeyParser,
-    renderer: Renderer,
+    #[cfg(feature = "pdfium")]
+    renderer: PdfiumRenderer,
+    #[cfg(not(feature = "pdfium"))]
+    renderer: HayroRenderer,
 }
 
 impl App {
+    #[cfg(feature = "pdfium")]
+    pub fn new(file: &str) -> Self {
+        let window = None;
+        let surface: Option<Surface<Rc<Window>, Rc<Window>>> = None;
+        let latest_scale = 1.0;
+        let scale = latest_scale;
+        let renderer_result = PdfiumRenderer::new(file);
+        let mut renderer = match renderer_result {
+            Ok(r) => r,
+            Err(r) => {
+                panic!("Pdfium renderer could not be created:{}", r.to_string())
+            }
+        };
+        let pages = renderer.render_pdf(None, 1.0);
+        let mut parser = KeyParser::default();
+        parser.init();
+        Self {
+            window,
+            latest_scale,
+            scale,
+            vertical_scroll_pos: 0,
+            parser,
+            renderer,
+            surface,
+            pages,
+            page: 0,
+        }
+    }
+
+    #[cfg(not(feature = "pdfium"))]
     pub fn new(file: Vec<u8>) -> Self {
         let window = None;
         let surface: Option<Surface<Rc<Window>, Rc<Window>>> = None;
         let latest_scale = 1.0;
         let scale = latest_scale;
-        let mut renderer = Renderer::new(file.clone());
+        let mut renderer = HayroRenderer::new(file.clone());
+
         let pages = renderer.render_pdf(None, scale);
         let mut parser = KeyParser::default();
         parser.init();
@@ -97,7 +141,6 @@ impl ApplicationHandler for App {
                 let mut changed = false;
 
                 if let Key::Character(letter) = &key_event.logical_key {
-
                     // Figure out whether the current page is taller than the window.
                     let win_h = self
                         .window
@@ -138,7 +181,8 @@ impl ApplicationHandler for App {
                                 changed = true;
                             } else if self.page > 0 {
                                 // Top reached -> previous page, land at its bottom.
-                                let prev_h = self.pages[self.page].height() as u32;
+                                let prev_h =
+                                    self.pages[self.page].height() as u32;
                                 self.page -= 1;
                                 self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
                                 changed = true;
@@ -150,7 +194,7 @@ impl ApplicationHandler for App {
                             changed = true;
                         }
                         Some(Command::ZoomOut) => {
-                            if self.latest_scale - ZOOM_FACTOR >= 1.0 {
+                            if self.latest_scale - ZOOM_FACTOR >= 0.01 {
                                 self.latest_scale -= ZOOM_FACTOR;
                                 self.vertical_scroll_pos = 0;
                                 changed = true;
@@ -168,7 +212,7 @@ impl ApplicationHandler for App {
                             changed = true;
                         }
                         Some(Command::JumpToPage(num)) => {
-                            self.page = num.clamp(0, self.pages.len());
+                            self.page = num.clamp(0, self.pages.len() - 1);
                             self.vertical_scroll_pos = 0;
                             changed = true;
                         }
@@ -252,25 +296,49 @@ impl App {
             .saturating_sub(self.vertical_scroll_pos)
             .min(win_size.height.saturating_sub(vertical_padding));
 
+        let page_pixels: Vec<u8>;
+
+        #[cfg(not(feature = "pdfium"))]
         let page_pixels = page.data();
+        #[cfg(feature = "pdfium")]
+        {
+            let rgba_bytes = page.as_rgba_bytes();
+            match rgba_bytes {
+                Ok(bytes) => {
+                    page_pixels = bytes;
+                }
+                Err(error) => {
+                    panic!("Page could not be take from pages to add new data: {error}");
+                }
+            }
+        }
 
         // Draw the page in the buffer.
         for y in 0..next_frame_page_height {
             let current_row = self.vertical_scroll_pos + y;
             for x in 0..next_frame_page_width {
-                let page_pixel = page_pixels[((current_row * page_width) + x) as usize];
-
-                let r = page_pixel.r as u32;
-                let g = page_pixel.g as u32;
-                let b = page_pixel.b as u32;
-
                 let horizontal_draw_pos = horizontal_padding + x;
                 let vertical_draw_pos = vertical_padding + y;
                 let draw_index =
                     (vertical_draw_pos * win_size.width + horizontal_draw_pos) as usize;
 
-                // softbuffer wants each pixel as one Integer, so we align the rgb values.
-                buffer[draw_index] = (r << 16) | (g << 8) | b;
+                #[cfg(not(feature = "pdfium"))]
+                {
+                    let page_pixel = page_pixels[((current_row * page_width) + x) as usize];
+                    let r = page_pixel.r as u32;
+                    let g = page_pixel.g as u32;
+                    let b = page_pixel.b as u32;
+                    buffer[draw_index] = (r << 16) | (g << 8) | b;
+                }
+
+                #[cfg(feature = "pdfium")]
+                {
+                    let i = (((current_row * page_width) + x) * 4) as usize;
+                    let r = page_pixels[i] as u32;
+                    let g = page_pixels[i + 1] as u32;
+                    let b = page_pixels[i + 2] as u32;
+                    buffer[draw_index] = (r << 16) | (g << 8) | b;
+                }
             }
         }
         buffer.present().unwrap();

@@ -8,12 +8,12 @@ use std::sync::Arc;
 use hayro::vello_cpu::Pixmap;
 use vello_cpu::color::palette::css::WHITE;
 
-pub struct Renderer {
+pub struct HayroRenderer {
     pdf: Pdf,
     interpreter_settings: InterpreterSettings,
 }
 
-impl Renderer {
+impl HayroRenderer {
 
     pub fn new(file: Vec<u8>) -> Self {
         let pdf = Pdf::new(file).unwrap();
@@ -131,7 +131,7 @@ impl Renderer {
             StandardFont::Symbol => "FoxitSymbol.pfb",
         }
     }
-    
+
     fn load_asset(name: &str) -> Option<(FontData, u32)> {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../hayro-tests/assets");
         let path = base.join(name);

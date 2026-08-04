@@ -2,3 +2,5 @@
 .envrc
 result
 about.*
+.idea
+.direnv
