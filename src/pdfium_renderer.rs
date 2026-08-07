@@ -1,4 +1,7 @@
+#[cfg(feature = "pdfium")]
 use pdfium::*;
+
+const REPO: &str = "https://github.com/j0shk0/vipdf";
 
 #[cfg(feature = "pdfium")]
 pub struct PdfiumRenderer {
@@ -34,7 +37,12 @@ impl PdfiumRenderer {
                         all_pages
                     }
                     _ => {
-                        all_pages
+                        let page_number = val.1;
+                        println!(
+                            "Hm. Page {page_number} of your document could not be rendered. \
+                            Please consider opening an issue at {REPO} if you PDF is readable by other PDF Readers."
+                        );
+                        std::process::exit(1);
                     }
                 }
             }
@@ -43,7 +51,7 @@ impl PdfiumRenderer {
                 // for lazy loading.
                 all_pages = Vec::new();
                 for _ in self.pdf.pages() {
-                    all_pages.push(PdfiumBitmap::empty(1,1,PdfiumBitmapFormat::Bgra).unwrap());
+                    all_pages.push(PdfiumBitmap::empty(1, 1, PdfiumBitmapFormat::Bgra).unwrap());
                 }
                 let first_page = self.pdf.page(index as i32);
                 match first_page {
@@ -52,7 +60,11 @@ impl PdfiumRenderer {
                         all_pages[index] = rendered_page;
                     }
                     _ => {
-                        panic!("The first page of this document could not be rendered.");
+                        println!(
+                            "Hm. Page 0 of your document could not be rendered. \
+                            Please consider opening an issue at {REPO} if you PDF is readable by other PDF Readers."
+                        );
+                        std::process::exit(1);
                     }
                 }
                 all_pages

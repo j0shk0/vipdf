@@ -1,6 +1,6 @@
 [package]
 name = "vipdf"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
 
@@ -9,8 +9,6 @@ winit = "0.30.13"
 hayro = "0.7.1"
 vello_cpu = "0.0.9"
 softbuffer = "0.4.0"
-pdfium = "0.10.4"
+pdfium = { version = "0.10.4", optional = true }
 
 [features]
-pdfium = []
-default = []

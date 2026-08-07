@@ -121,7 +121,7 @@ in), `j` / `k` scroll within the page first, and only turn the page once you rea
 
 ## Project status & roadmap
 
-This is an actively-changing project. Things that are planned:
+This is an actively changing project. Things that are planned:
 
 - Horizontal scrolling
 - Search mode

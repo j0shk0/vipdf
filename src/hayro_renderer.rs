@@ -96,7 +96,6 @@ impl HayroRenderer {
                     let _ = &output.push(Pixmap::new(0,0));
                 }
                 output[0] = first_page;
-                print!("{}", output.len().to_string());
             }
             Some((pages, page)) => {
                 let cache = &RenderCache::new();

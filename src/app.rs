@@ -22,15 +22,17 @@ const SCROLL_STEP: u32 = 40;
 pub struct App {
     window: Option<Rc<Window>>,
     surface: Option<Surface<Rc<Window>, Rc<Window>>>,
-    #[cfg(feature = "pdfium")]
-    pages: Vec<PdfiumBitmap>,
-    #[cfg(not(feature = "pdfium"))]
-    pages: Vec<hayro::vello_cpu::Pixmap>,
     page: usize,
     latest_scale: f32,
     scale: f32,
     vertical_scroll_pos: u32,
     parser: KeyParser,
+
+    #[cfg(feature = "pdfium")]
+    pages: Vec<PdfiumBitmap>,
+    #[cfg(not(feature = "pdfium"))]
+    pages: Vec<hayro::vello_cpu::Pixmap>,
+
     #[cfg(feature = "pdfium")]
     renderer: PdfiumRenderer,
     #[cfg(not(feature = "pdfium"))]
@@ -48,7 +50,9 @@ impl App {
         let mut renderer = match renderer_result {
             Ok(r) => r,
             Err(r) => {
-                panic!("Pdfium renderer could not be created:{}", r.to_string())
+                panic!(
+                    "could not open PDF with pdfium (missing file, not a PDF, or encrypted): {r}"
+                )
             }
         };
         let pages = renderer.render_pdf(None, 1.0);
@@ -97,7 +101,10 @@ impl ApplicationHandler for App {
         let window = Rc::new(
             event_loop
                 .create_window(Window::default_attributes().with_title("vipdf"))
-                .unwrap(),
+                .expect(
+                    "create_window: needs a display server and a window config \
+                in line with default window config.",
+                ),
         );
 
         // Size the window to the first page (if there is one).
@@ -108,8 +115,10 @@ impl ApplicationHandler for App {
             ));
         }
 
-        let context = softbuffer::Context::new(window.clone()).unwrap();
-        let surface = Surface::new(&context, window.clone()).unwrap();
+        let context = softbuffer::Context::new(window.clone())
+            .expect("softbuffer::Context::new: display platform not supported by softbuffer");
+        let surface = Surface::new(&context, window.clone())
+            .expect("softbuffer::Surface::new: window handle rejected. Are you on an unsupported platform ?");
 
         self.surface = Some(surface);
         self.window = Some(window);
@@ -119,7 +128,7 @@ impl ApplicationHandler for App {
         let tmp_page_num = self.page;
         match event {
             WindowEvent::CloseRequested => {
-                println!("The close button was pressed; stopping");
+                println!("ciao.");
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
@@ -181,8 +190,7 @@ impl ApplicationHandler for App {
                                 changed = true;
                             } else if self.page > 0 {
                                 // Top reached -> previous page, land at its bottom.
-                                let prev_h =
-                                    self.pages[self.page].height() as u32;
+                                let prev_h = self.pages[self.page].height() as u32;
                                 self.page -= 1;
                                 self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
                                 changed = true;
@@ -262,7 +270,9 @@ impl App {
             return;
         };
 
-        surface.resize(win_width, win_height).unwrap();
+        surface
+            .resize(win_width, win_height)
+            .expect("surface.resize: window size rejected (out of range)");
 
         let page_width = page.width() as u32;
         let page_height = page.height() as u32;
@@ -285,7 +295,10 @@ impl App {
         };
 
         // Get buffer for the next frame.
-        let mut buffer = surface.buffer_mut().unwrap();
+        let mut buffer = surface.buffer_mut().expect(
+            "surface.buffer_mut: surface was resized on the \
+            line above, so it is configured",
+        );
         buffer.fill(0x0000_0000);
 
         let next_frame_page_width = page_width.min(win_size.width);
@@ -308,7 +321,7 @@ impl App {
                     page_pixels = bytes;
                 }
                 Err(error) => {
-                    panic!("Page could not be take from pages to add new data: {error}");
+                    panic!("page {} could not be converted to RGBA: {error}", self.page);
                 }
             }
         }
