@@ -1,6 +1,7 @@
 #[cfg(feature = "pdfium")]
 use pdfium::*;
 
+#[cfg(feature = "pdfium")]
 const REPO: &str = "https://github.com/j0shk0/vipdf";
 
 #[cfg(feature = "pdfium")]

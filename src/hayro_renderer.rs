@@ -13,8 +13,10 @@ pub struct HayroRenderer {
     interpreter_settings: InterpreterSettings,
 }
 
+#[allow(dead_code)]
 impl HayroRenderer {
 
+    #[allow(dead_code)]
     pub fn new(file: Vec<u8>) -> Self {
         let pdf = Pdf::new(file).unwrap();
         let interpreter_settings = InterpreterSettings {
@@ -68,6 +70,7 @@ impl HayroRenderer {
         Self { pdf, interpreter_settings }
     }
 
+    #[allow(dead_code)]
     pub fn render_pdf(
         &mut self,
         pages: Option<(Vec<Pixmap>, usize)>,
@@ -112,6 +115,7 @@ impl HayroRenderer {
         output
     }
 
+    #[allow(dead_code)]
     fn pick_standard_font(font: &StandardFont) -> &'static str {
         match font {
             StandardFont::Helvetica => "LiberationSans-Regular.ttf",
@@ -131,6 +135,7 @@ impl HayroRenderer {
         }
     }
 
+    #[allow(dead_code)]
     fn load_asset(name: &str) -> Option<(FontData, u32)> {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../hayro-tests/assets");
         let path = base.join(name);

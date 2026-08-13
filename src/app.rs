@@ -3,8 +3,6 @@ use crate::hayro_renderer::HayroRenderer;
 use crate::parser::{Command, KeyParser};
 #[cfg(feature = "pdfium")]
 use crate::pdfium_renderer::PdfiumRenderer;
-#[cfg(not(feature = "pdfium"))]
-use hayro::hayro_syntax::Pdf;
 #[cfg(feature = "pdfium")]
 use pdfium::PdfiumBitmap;
 use softbuffer::Surface;
@@ -386,6 +384,7 @@ impl App {
             .saturating_sub(self.vertical_scroll_pos)
             .min(win_size.height.saturating_sub(vertical_padding));
 
+        #[allow(unused)]
         let page_pixels: Vec<u8>;
 
         #[cfg(not(feature = "pdfium"))]
