@@ -148,6 +148,7 @@ impl ApplicationHandler for App {
                 }
 
                 let mut changed = false;
+                let mut already_rendered= false;
 
                 if let Key::Character(letter) = &key_event.logical_key {
                     // Figure out whether the current page is taller than the window.
@@ -183,19 +184,27 @@ impl ApplicationHandler for App {
                             }
                         }
                         Some(Command::ScrollDownN(num)) => {
+                            let prev_h = self.pages[self.page].height() as u32;
                             if self.vertical_scroll_pos < max_scroll {
                                 // Still room to scroll down within this page.
                                 self.vertical_scroll_pos = (self.vertical_scroll_pos
                                     + SCROLL_STEP * num as u32)
                                     .min(max_scroll);
                                 changed = true;
-                            } else if self.page + num < self.pages.len() {
+                                // Discriminate by zoom level.
+                            } else if prev_h <= win_h {
+                                if self.page + num < self.pages.len() {
+                                    self.page += num;
+                                    self.vertical_scroll_pos = 0;
+                                    changed = true;
+                                } else {
+                                    self.page = self.pages.len() - 1;
+                                    changed = true;
+                                }
+                            } else if self.page + 1 < self.pages.len() {
                                 // Bottom reached -> next page.
-                                self.page += num;
+                                self.page += 1;
                                 self.vertical_scroll_pos = 0;
-                                changed = true;
-                            } else {
-                                self.page = self.pages.len() - 1;
                                 changed = true;
                             }
                         }
@@ -207,27 +216,51 @@ impl ApplicationHandler for App {
                                 changed = true;
                             } else if self.page > 0 {
                                 // Top reached -> previous page, land at its bottom.
-                                let prev_h = self.pages[self.page].height() as u32;
                                 self.page -= 1;
-                                self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
+
+                                self.scale = self.latest_scale; // Avoiding rerender by draw function.
+                                let pages = std::mem::take(&mut self.pages);
+                                self.pages = self
+                                    .renderer
+                                    .render_pdf(Option::from((pages, self.page)), self.scale);
+                                already_rendered = true;
+
+                                let page_h = self.pages[self.page].height() as u32;
+                                self.vertical_scroll_pos = page_h.saturating_sub(win_h);
                                 changed = true;
                             }
                         }
                         Some(Command::ScrollUpN(num)) => {
+                            let page_h = self.pages[self.page].height() as u32;
                             if self.vertical_scroll_pos > 0 {
                                 // Still room to scroll up within this page.
                                 self.vertical_scroll_pos = self
                                     .vertical_scroll_pos
                                     .saturating_sub(SCROLL_STEP * num as u32);
                                 changed = true;
-                            } else if self.page.saturating_sub(num) > 0 {
+                                // Discriminate for zoom level.
+                            } else if page_h <= win_h {
+                                if self.page.saturating_sub(num) > 0 {
+                                    self.page = self.page.saturating_sub(num);
+                                    self.vertical_scroll_pos = 0;
+                                    changed = true;
+                                } else {
+                                    self.page = 0;
+                                    changed = true;
+                                }
+                            } else if self.page > 0 {
                                 // Top reached -> previous page, land at its bottom.
-                                let prev_h = self.pages[self.page].height() as u32;
-                                self.page = self.page.saturating_sub(num);
-                                self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
-                                changed = true;
-                            } else {
-                                self.page = 0;
+                                self.page -= 1;
+
+                                self.scale = self.latest_scale; // Avoiding rerender by draw function.
+                                let pages = std::mem::take(&mut self.pages);
+                                self.pages = self
+                                    .renderer
+                                    .render_pdf(Option::from((pages, self.page)), self.scale);
+                                already_rendered = true;
+
+                                let page_h = self.pages[self.page].height() as u32;
+                                self.vertical_scroll_pos = page_h.saturating_sub(win_h);
                                 changed = true;
                             }
                         }
@@ -250,6 +283,14 @@ impl ApplicationHandler for App {
                         }
                         Some(Command::JumpToEnd) => {
                             self.page = self.pages.len() - 1;
+
+                            self.scale = self.latest_scale; // Avoiding rerender by draw function.
+                            let pages = std::mem::take(&mut self.pages);
+                            self.pages = self
+                                .renderer
+                                .render_pdf(Option::from((pages, self.page)), self.scale);
+                            already_rendered = true;
+
                             let page_h = self.pages[self.page].height() as u32;
                             self.vertical_scroll_pos = page_h.saturating_sub(win_h);
                             changed = true;
@@ -263,8 +304,9 @@ impl ApplicationHandler for App {
 
                     if changed {
                         if let Some(window) = self.window.as_ref() {
-                            if self.page != tmp_page_num {
+                            if self.page != tmp_page_num && !already_rendered {
                                 let pages = std::mem::take(&mut self.pages);
+                                self.scale = self.latest_scale;
                                 self.pages = self
                                     .renderer
                                     .render_pdf(Option::from((pages, self.page)), self.scale);
