@@ -2,6 +2,8 @@
 pub enum Command {
     ScrollUp,
     ScrollDown,
+    ScrollUpN(usize),
+    ScrollDownN(usize),
     JumpToStart,
     JumpToEnd,
     ZoomIn,
@@ -61,9 +63,25 @@ impl KeyParser {
             ..Default::default()
         };
 
+        // n times j executed
+        let n_j_state = State {
+            value: String::from("j"),
+            command: Option::from(Command::ScrollDownN(0)),
+            number_sensitive: true,
+            ..Default::default()
+        };
+
         let k_state = State {
             value: String::from("k"),
             command: Option::from(Command::ScrollUp),
+            ..Default::default()
+        };
+
+        // n times k executed
+        let n_k_state = State {
+            value: String::from("k"),
+            command: Option::from(Command::ScrollUpN(0)),
+            number_sensitive: true,
             ..Default::default()
         };
 
@@ -115,11 +133,16 @@ impl KeyParser {
         self.root.next.push(minus_state);
         self.root.next.push(big_g_state);
         self.root.next.push(g_to_page_state);
+        self.root.next.push(n_j_state);
+        self.root.next.push(n_k_state);
+
 
         self.state = self.root.clone();
     }
 
     pub fn read(&mut self, letter: String) -> Option<Command> {
+        // Try interpreting the letter as usize.
+        // If a letter is not a number, it's interpreted as a character.
         if letter.parse::<usize>().is_ok() {
             let num = self.num_buffer.clone().to_string() + &*letter.to_string();
 
@@ -135,15 +158,15 @@ impl KeyParser {
             None
         } else {
             let mut output: Option<Command> = None;
-
             let word: String = self.state.value.clone() + &*letter;
+
             if self.num_buffer != 0 {
                 let next_state = self.state.find(&word, true);
 
-                // Did we reach a new state ?
+                // Did we reach a new state?
                 match next_state {
                     Some(state) =>
-                    // Does our new state have a command ?
+                    // Does our new state have a command?
                     {
                         match state.command {
                             None => {
@@ -154,8 +177,18 @@ impl KeyParser {
                                 self.num_buffer = 0;
                                 self.state = self.root.clone();
                             }
+                            Some(Command::ScrollUpN(0)) => {
+                                output = Option::from(Command::ScrollUpN(self.num_buffer));
+                                self.num_buffer = 0;
+                                self.state = self.root.clone();
+                            }
+                            Some(Command::ScrollDownN(0)) => {
+                                output = Option::from(Command::ScrollDownN(self.num_buffer));
+                                self.num_buffer = 0;
+                                self.state = self.root.clone();
+                            }
                             // number-sensitive commands must be
-                            // handled explicitly.
+                            // handled here explicitly.
                             _ => {
                                 panic!(
                                     "number-sensitive command is \
@@ -175,10 +208,10 @@ impl KeyParser {
             } else {
                 let next_state = self.state.find(&word, false);
 
-                // Did we reach a new state ?
+                // Did we reach a new state?
                 match next_state {
                     Some(state) =>
-                    // Does our new state have a command ?
+                    // Does our new state have a command?
                     {
                         match state.command {
                             None => {

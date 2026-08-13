@@ -103,16 +103,20 @@ _Debian / Ubuntu_: There is no official apt package for standalone pdfium... You
 
 ## Usage
 
-| Key           | Action                                                                 |
-|---------------|------------------------------------------------------------------------|
-| `gg`          | **Top of the first page**                                              |
-| `Shift+g`     | **Top of the last page**                                               |
-| `j`           | **Next page** or **scroll down** if page is taller than window         |
-| `k`           | **Previous page** or **scroll up** if page is taller than the window   |
-| `${number}gg` | **Jump to page ${number}** (Careful: might not match table of content) |
-| `+`           | Zoom in                                                                |
-| `-`           | Zoom out                                                               |
-| Close window  | Quit                                                                   |
+let `N` be a natural number:
+
+| Key          | Action                                                                                           |
+|--------------|--------------------------------------------------------------------------------------------------|
+| `gg`         | **Top of the first page**                                                                        |
+| `Ngg`        | **Jump to page `N`** (Careful: might not match table of content)                                 |
+| `Shift+g`    | **Bottom of the last page**                                                                      |
+| `j`          | **Next page** or **scroll down** if page is taller than window                                   |
+| `Nj`         | **Execute `N` times next page** or **scroll down `N` times** if page is taller than window       |
+| `k`          | **Previous page** or **scroll up** if page is taller than the window                             |
+| `Nk`         | **Execute `N` times previous page** or **scroll up `N` times** if page is taller than the window |
+| `+`          | Zoom in                                                                                          |
+| `-`          | Zoom out                                                                                         |
+| Close window | Quit                                                                                             |
 
 When a page fits entirely within the window, `j` / `k` turn pages. When a page is taller than the window (after zooming
 in), `j` / `k` scroll within the page first, and only turn the page once you reach the bottom/top.

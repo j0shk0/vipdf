@@ -182,6 +182,23 @@ impl ApplicationHandler for App {
                                 changed = true;
                             }
                         }
+                        Some(Command::ScrollDownN(num)) => {
+                            if self.vertical_scroll_pos < max_scroll {
+                                // Still room to scroll down within this page.
+                                self.vertical_scroll_pos = (self.vertical_scroll_pos
+                                    + SCROLL_STEP * num as u32)
+                                    .min(max_scroll);
+                                changed = true;
+                            } else if self.page + num < self.pages.len() {
+                                // Bottom reached -> next page.
+                                self.page += num;
+                                self.vertical_scroll_pos = 0;
+                                changed = true;
+                            } else {
+                                self.page = self.pages.len() - 1;
+                                changed = true;
+                            }
+                        }
                         Some(Command::ScrollUp) => {
                             if self.vertical_scroll_pos > 0 {
                                 // Still room to scroll up within this page.
@@ -193,6 +210,24 @@ impl ApplicationHandler for App {
                                 let prev_h = self.pages[self.page].height() as u32;
                                 self.page -= 1;
                                 self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
+                                changed = true;
+                            }
+                        }
+                        Some(Command::ScrollUpN(num)) => {
+                            if self.vertical_scroll_pos > 0 {
+                                // Still room to scroll up within this page.
+                                self.vertical_scroll_pos = self
+                                    .vertical_scroll_pos
+                                    .saturating_sub(SCROLL_STEP * num as u32);
+                                changed = true;
+                            } else if self.page.saturating_sub(num) > 0 {
+                                // Top reached -> previous page, land at its bottom.
+                                let prev_h = self.pages[self.page].height() as u32;
+                                self.page = self.page.saturating_sub(num);
+                                self.vertical_scroll_pos = prev_h.saturating_sub(win_h);
+                                changed = true;
+                            } else {
+                                self.page = 0;
                                 changed = true;
                             }
                         }
