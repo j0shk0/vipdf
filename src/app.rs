@@ -92,6 +92,22 @@ impl App {
             page: 0,
         }
     }
+
+    // Sometimes we need to jump to the end of a page directly while scrolling.
+    // Since this page might not have the same size as our current page,
+    // we need to render it first to get its true height.
+    fn goto_page_safe(&mut self, changed: &mut bool, already_rendered: &mut bool, win_h: u32) {
+        self.scale = self.latest_scale; // Avoiding rerender by draw function.
+        let pages = std::mem::take(&mut self.pages);
+        self.pages = self
+            .renderer
+            .render_pdf(Option::from((pages, self.page)), self.scale);
+        *already_rendered = true;
+
+        let page_h = self.pages[self.page].height() as u32;
+        self.vertical_scroll_pos = page_h.saturating_sub(win_h);
+        *changed = true;
+    }
 }
 
 impl ApplicationHandler for App {
@@ -146,7 +162,7 @@ impl ApplicationHandler for App {
                 }
 
                 let mut changed = false;
-                let mut already_rendered= false;
+                let mut already_rendered = false;
 
                 if let Key::Character(letter) = &key_event.logical_key {
                     // Figure out whether the current page is taller than the window.
@@ -160,8 +176,9 @@ impl ApplicationHandler for App {
                         .get(self.page)
                         .map(|p| p.height() as u32)
                         .unwrap_or(0);
+                    let page_fully_displayed = page_h <= win_h;
 
-                    // How far we can scroll before the bottom of the page reaches
+                    // How far we can scroll down before the bottom of the page reaches
                     // the bottom of the window. 0 if the page fits.
                     let max_scroll = page_h.saturating_sub(win_h);
                     let command: Option<Command> = self.parser.read(letter.to_string());
@@ -182,84 +199,75 @@ impl ApplicationHandler for App {
                             }
                         }
                         Some(Command::ScrollDownN(num)) => {
-                            let prev_h = self.pages[self.page].height() as u32;
-                            if self.vertical_scroll_pos < max_scroll {
-                                // Still room to scroll down within this page.
-                                self.vertical_scroll_pos = (self.vertical_scroll_pos
-                                    + SCROLL_STEP * num as u32)
-                                    .min(max_scroll);
-                                changed = true;
-                                // Discriminate by zoom level.
-                            } else if prev_h <= win_h {
+                            // Is the page fully displayed?
+                            // If true, we are not scrolling inside a page but across pages.
+                            if page_fully_displayed {
                                 if self.page + num < self.pages.len() {
+                                    // Would we go out of bounds?
                                     self.page += num;
                                     self.vertical_scroll_pos = 0;
                                     changed = true;
                                 } else {
+                                    // We would go out of bounds and advance directly to the last page.
                                     self.page = self.pages.len() - 1;
                                     changed = true;
                                 }
+                            } else if self.vertical_scroll_pos < max_scroll {
+                                // Page is not fully displayed.
+                                // Is there still room to scroll within this page?
+                                self.vertical_scroll_pos = (self.vertical_scroll_pos
+                                    + SCROLL_STEP * num as u32)
+                                    .min(max_scroll);
+                                changed = true;
                             } else if self.page + 1 < self.pages.len() {
-                                // Bottom reached -> next page.
+                                // No room to scroll go to top of next page.
                                 self.page += 1;
                                 self.vertical_scroll_pos = 0;
                                 changed = true;
                             }
                         }
                         Some(Command::ScrollUp) => {
+                            // Can we still scroll up within this page?
                             if self.vertical_scroll_pos > 0 {
-                                // Still room to scroll up within this page.
                                 self.vertical_scroll_pos =
                                     self.vertical_scroll_pos.saturating_sub(SCROLL_STEP);
                                 changed = true;
                             } else if self.page > 0 {
-                                // Top reached -> previous page, land at its bottom.
                                 self.page -= 1;
-
-                                self.scale = self.latest_scale; // Avoiding rerender by draw function.
-                                let pages = std::mem::take(&mut self.pages);
-                                self.pages = self
-                                    .renderer
-                                    .render_pdf(Option::from((pages, self.page)), self.scale);
-                                already_rendered = true;
-
-                                let page_h = self.pages[self.page].height() as u32;
-                                self.vertical_scroll_pos = page_h.saturating_sub(win_h);
-                                changed = true;
+                                self.goto_page_safe(
+                                    &mut changed,
+                                    &mut already_rendered,
+                                    win_h,
+                                );
                             }
                         }
                         Some(Command::ScrollUpN(num)) => {
-                            let page_h = self.pages[self.page].height() as u32;
-                            if self.vertical_scroll_pos > 0 {
-                                // Still room to scroll up within this page.
-                                self.vertical_scroll_pos = self
-                                    .vertical_scroll_pos
-                                    .saturating_sub(SCROLL_STEP * num as u32);
-                                changed = true;
-                                // Discriminate for zoom level.
-                            } else if page_h <= win_h {
+                            // is the page fully displayed?
+                            // if true, we are not scrolling inside a page but across pages.
+                            if page_fully_displayed {
                                 if self.page.saturating_sub(num) > 0 {
+                                    // Would we go out of bounds?
                                     self.page = self.page.saturating_sub(num);
                                     self.vertical_scroll_pos = 0;
                                     changed = true;
                                 } else {
+                                    // We would go out of bounds and advance to the first page.
                                     self.page = 0;
                                     changed = true;
                                 }
-                            } else if self.page > 0 {
-                                // Top reached -> previous page, land at its bottom.
-                                self.page -= 1;
-
-                                self.scale = self.latest_scale; // Avoiding rerender by draw function.
-                                let pages = std::mem::take(&mut self.pages);
-                                self.pages = self
-                                    .renderer
-                                    .render_pdf(Option::from((pages, self.page)), self.scale);
-                                already_rendered = true;
-
-                                let page_h = self.pages[self.page].height() as u32;
-                                self.vertical_scroll_pos = page_h.saturating_sub(win_h);
+                            } else if self.vertical_scroll_pos > 0 {
+                                // Can we still scroll up within this page?
+                                self.vertical_scroll_pos = self
+                                    .vertical_scroll_pos
+                                    .saturating_sub(SCROLL_STEP * num as u32);
                                 changed = true;
+                            } else if self.page > 0 {
+                                self.page -= 1;
+                                self.goto_page_safe(
+                                    &mut changed,
+                                    &mut already_rendered,
+                                    win_h,
+                                );
                             }
                         }
                         Some(Command::ZoomIn) => {
@@ -281,17 +289,11 @@ impl ApplicationHandler for App {
                         }
                         Some(Command::JumpToEnd) => {
                             self.page = self.pages.len() - 1;
-
-                            self.scale = self.latest_scale; // Avoiding rerender by draw function.
-                            let pages = std::mem::take(&mut self.pages);
-                            self.pages = self
-                                .renderer
-                                .render_pdf(Option::from((pages, self.page)), self.scale);
-                            already_rendered = true;
-
-                            let page_h = self.pages[self.page].height() as u32;
-                            self.vertical_scroll_pos = page_h.saturating_sub(win_h);
-                            changed = true;
+                            self.goto_page_safe(
+                                &mut changed,
+                                &mut already_rendered,
+                                win_h,
+                            );
                         }
                         Some(Command::JumpToPage(num)) => {
                             self.page = num.clamp(0, self.pages.len() - 1);
