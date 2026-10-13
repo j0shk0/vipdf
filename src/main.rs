@@ -2,6 +2,8 @@ mod app;
 mod hayro_renderer;
 mod parser;
 mod pdfium_renderer;
+mod event_handler;
+mod state;
 
 use app::App;
 use winit::event_loop::{ControlFlow, EventLoop};
