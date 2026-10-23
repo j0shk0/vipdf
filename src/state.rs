@@ -1,7 +1,7 @@
 #[cfg(feature = "pdfium")]
 use pdfium::PdfiumBitmap;
 
-pub struct AppState<'a> {
+pub struct AppState {
     pub page: usize,
     pub max_page: usize,
     pub latest_scale: f32,
@@ -14,12 +14,12 @@ pub struct AppState<'a> {
     pub fits_vertically: bool,
     pub fits_horizontally: bool,
     #[cfg(feature = "pdfium")]
-    pub pages: Option<&'a [PdfiumBitmap]>,
+    pub pages: Option<Vec<PdfiumBitmap>>,
     #[cfg(not(feature = "pdfium"))]
-    pub pages: Option<&'a [hayro::vello_cpu::Pixmap]>
+    pub pages: Option<Vec<hayro::vello_cpu::Pixmap>>
 }
 
-impl AppState<'_> {
+impl AppState {
     pub fn new() -> Self {
         Self {
             page: 0,
@@ -31,8 +31,8 @@ impl AppState<'_> {
             max_v_scroll: 0,
             max_h_scroll: 0,
             changed: false,
-            fits_vertically: false,
-            fits_horizontally: false,
+            fits_vertically: true,
+            fits_horizontally: true,
             #[cfg(feature = "pdfium")]
             pages: None,
             #[cfg(not(feature = "pdfium"))]
