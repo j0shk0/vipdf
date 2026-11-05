@@ -68,13 +68,13 @@ impl WindowHandler<'_> {
         let unwrapped_page_pixels = page_pixels.data();
         #[cfg(feature = "pdfium")]
         {
-            let rgba_bytes = page.as_rgba_bytes();
+            let rgba_bytes = page_pixels.as_rgba_bytes();
             match rgba_bytes {
                 Ok(bytes) => {
                     unwrapped_page_pixels = bytes;
                 }
                 Err(error) => {
-                    panic!("page {} could not be converted to RGBA: {error}", self.page);
+                    panic!("page {} could not be converted to RGBA: {error}",next_state.page);
                 }
             }
         }
