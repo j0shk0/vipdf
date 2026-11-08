@@ -32,7 +32,6 @@ const VERSION: &str = "vipdf v0.3.0";
 
 fn main() {
     let first_argument = &std::env::args().nth(1);
-
     let file_name = match first_argument {
         Some(text) => {
             if text.eq("--help") {

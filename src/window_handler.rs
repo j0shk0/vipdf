@@ -3,16 +3,70 @@ use rc::Rc;
 use softbuffer::Surface;
 use std::num::NonZeroU32;
 use std::rc;
+use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
-struct WindowHandler {
-    window: Rc<Window>,
-    surface: Surface<Rc<Window>, Rc<Window>>,
+pub struct WindowHandler {
+    window: Option<Rc<Window>>,
+    surface: Option<Surface<Rc<Window>, Rc<Window>>>,
 }
 
 impl WindowHandler {
-    fn draw(&mut self, next_state: &mut AppState) {
-        let win_size = self.window.inner_size();
+
+    pub fn new() -> Self {
+        Self {
+            window: None,
+            surface: None,
+        }
+    }
+    
+    pub fn request_redraw_wrapper(&mut self) {
+        if let Some(ref window) = self.window {
+            window.request_redraw();
+        }
+    }
+
+    pub fn resumed(&mut self, event_loop: &ActiveEventLoop, app_state: &AppState) {
+        let window = Rc::new(
+            event_loop
+                .create_window(Window::default_attributes().with_title("vipdf"))
+                .expect(
+                    "create_window: needs a display server and a window config \
+                in line with default window config.",
+                ),
+        );
+
+        // Size the window to the first page (if there is one).
+        let Some(ref pages) = app_state.pages else {
+            println!("No pages to display");
+            return;
+        };
+        if let Some(page) = pages.get(app_state.page) {
+            let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(
+                page.width() as u32,
+                page.height() as u32,
+            ));
+        }
+
+        let context = softbuffer::Context::new(window.clone())
+            .expect("softbuffer::Context::new: display platform not supported by softbuffer");
+        let surface = Surface::new(&context, window.clone())
+            .expect("softbuffer::Surface::new: window handle rejected. Are you on an unsupported platform ?");
+
+        self.surface = Some(surface);
+        self.window = Some(window);
+    }
+
+
+    pub fn draw(&mut self, app_state: &mut AppState) {
+        let (Some(window), Some(surface)) = (self.window.as_ref(), self.surface.as_mut()) else {
+            return;
+        };
+
+        let win_size = window.inner_size();
+        app_state.window_height = win_size.height;
+        app_state.refresh();
+
         let (Some(win_width), Some(win_height)) = (
             NonZeroU32::new(win_size.width),
             NonZeroU32::new(win_size.height),
@@ -20,16 +74,16 @@ impl WindowHandler {
             return;
         };
 
-        self.surface
+        surface
             .resize(win_width, win_height)
             .expect("surface.resize: window size rejected (out of range)");
 
         // Every State requires pixels. If that is not the case, we fail fast and loud.
-        let page_pixels = next_state
+        let page_pixels = app_state
             .pages
             .as_ref()
             .unwrap()
-            .get(next_state.page)
+            .get(app_state.page)
             .unwrap();
 
         let page_width = page_pixels.width() as u32;
@@ -41,14 +95,14 @@ impl WindowHandler {
 
         // Clamping the vertical scroll position. No scrolling past (page_height - window_height).
         // If the page fits the window, scroll_position becomes 0.
-        next_state.vertical_scroll_pos = next_state
+        app_state.vertical_scroll_pos = app_state
             .vertical_scroll_pos
             .min(page_height.saturating_sub(win_size.height));
 
         // If the page is taller than the window, scroll within the page.
         // If it fits, no scrolling, only switching to the next or previous page.
-        next_state.fits_vertically = page_height <= win_size.height;
-        let vertical_padding = if next_state.fits_vertically {
+        app_state.fits_vertically = page_height <= win_size.height;
+        let vertical_padding = if app_state.fits_vertically {
             (win_size.height - page_height) / 2
         } else {
             0
@@ -57,11 +111,11 @@ impl WindowHandler {
         // How many rows we can actually show: limited by window height and by
         // how many source rows remain below src_y0.
         let next_frame_page_height = page_height
-            .saturating_sub(next_state.vertical_scroll_pos)
+            .saturating_sub(app_state.vertical_scroll_pos)
             .min(win_size.height.saturating_sub(vertical_padding));
 
         // Get buffer for the next frame.
-        let mut buffer = self.surface.buffer_mut().expect(
+        let mut buffer = surface.buffer_mut().expect(
             "surface.buffer_mut: surface was resized on the \
             line above, so it is configured",
         );
@@ -74,7 +128,7 @@ impl WindowHandler {
         let unwrapped_page_pixels = page_pixels.data();
         #[cfg(feature = "pdfium")]
         {
-            let rgba_bytes = unwrapped_page_pixels.as_rgba_bytes();
+            let rgba_bytes = page_pixels.as_rgba_bytes();
             match rgba_bytes {
                 Ok(bytes) => {
                     unwrapped_page_pixels = bytes;
@@ -82,7 +136,7 @@ impl WindowHandler {
                 Err(error) => {
                     panic!(
                         "page {} could not be converted to RGBA: {error}",
-                        next_state.page
+                        app_state.page
                     );
                 }
             }
@@ -90,7 +144,7 @@ impl WindowHandler {
 
         // Draw the page in the buffer.
         for y in 0..next_frame_page_height {
-            let current_row = next_state.vertical_scroll_pos + y;
+            let current_row = app_state.vertical_scroll_pos + y;
             for x in 0..next_frame_page_width {
                 let horizontal_draw_pos = horizontal_padding + x;
                 let vertical_draw_pos = vertical_padding + y;
